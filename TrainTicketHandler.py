@@ -4,6 +4,8 @@
 import getpass
 import re
 from operator import attrgetter, itemgetter
+import smtplib
+from datetime import datetime
 
 from EmailUtility import EmailUtility
 from EmailUtility import EmailInfo
@@ -11,11 +13,11 @@ from LogHelper import LogHelper
 
 class TrainTicketHandler(object):
 
-    def __init__(self, server='', user='', passwd=''):
+    def __init__(self, server='', user='', passwd='', nTopMails=50):
         self.server = server
         self.user = user
         self.passwd = passwd
-        self.nTopMails = 0
+        self.nTopMails = nTopMails
         self.log = LogHelper().get_logger('TrainTicketHandler')
 
     def get_account_info(self):
@@ -25,13 +27,15 @@ class TrainTicketHandler(object):
             self.user = input('account (e.g. youremail@163.com): ')
         if self.passwd == '':
             self.passwd = getpass.getpass('password: ' )
-        self.nTopMails = int(input('how many mails to retrieve: '))
+        if self.nTopMails == 0:
+            self.nTopMails = int(input('how many mails to retrieve: '))
 
     def get_tickets(self):
         self.get_account_info()
         mailSrv = EmailUtility(self.server, self.user, self.passwd)
         headerList = mailSrv.get_latest_mails(self.nTopMails, topLineOnly=True)
         ticketMailSNs = []
+        tickets = []
         for rsp, mail, size, sn in headerList:
             mailInfo = EmailInfo(mail)
             try:
@@ -46,7 +50,7 @@ class TrainTicketHandler(object):
 
         ticketMails = mailSrv.get_mails(ticketMailSNs)
         self.log.debug('%d mail is received.' % len(ticketMails))
-        tickets = []
+
         for rsp, mail, size, sn in ticketMails:
             mailInfo = EmailInfo(mail)
             content = mailInfo.get_content()
@@ -57,6 +61,8 @@ class TrainTicketHandler(object):
         sortedTickets = sorted(tickets, key=attrgetter('date'), reverse=True)
         for x in sortedTickets:
             self.log.info(str(x))
+
+        return sortedTickets
 
 class TicketInfo(object):
 
@@ -69,10 +75,58 @@ class TicketInfo(object):
         self.seattype = seattype
         self.price = price
         self.bookdate = bookdate
+    def to_dict(self):
+        return {
+            'owner': self.owner,
+            'date': self.date,
+            'fromto': self.fromto,
+            'trainno': self.trainno,
+            'seatno': self.seatno,
+            'seattype': self.seattype,
+            'price': self.price,
+            'bookdate': self.bookdate
+        }
 
     def __repr__(self):
         return repr((self.owner, self.date, self.fromto, self.trainno, self.seatno, self.seattype, self.price, self.bookdate))
 
+def send_email(smtp_server, email, passwd, tickets):
+    msg = 'From: %s\r\nTo:%s\r\nSubject:TrainTicketsInfo\r\n\r\n' % (email, email) + '\n'.join([
+        '%(date)s\t%(weekday)s\t%(trainno)s\t%(seatno)s \n' % {
+            'date': t.date,
+            'weekday': translate_week_day(t.date),
+            'trainno': t.trainno,
+            'seatno': t.seatno
+        } for t in tickets
+    ])
+    # print(msg)
+    server = smtplib.SMTP()
+    server.set_debuglevel(1)
+    server.connect(smtp_server)
+    server.login(email, passwd)
+    server.sendmail(email, email, msg.encode())
+    server.quit()
+
+def translate_week_day(strDate):
+    weekday = ['一','二','三','四','五','六','日']
+    myDate = datetime.strptime(strDate, '%Y年%m月%d日%H:%M')
+    return '周' + weekday[myDate.weekday()]
+
 if __name__ == '__main__':
-    ticketHandler = TrainTicketHandler('pop3.163.com', 'zybzyf@163.com')
-    ticketHandler.get_tickets()
+    pop3_server = input("pop server (e.g. pop3.163.com): ")
+    if pop3_server == '':
+        pop3_server = 'pop3.163.com'
+    email = input('email (e.g. youremail@163.com): ')
+    if email == '':
+        email = 'zybzyf@163.com'
+    passwd = getpass.getpass('password: ' )
+    smtp_server = input('smtp server (e.g. smtp.163.com)')
+    if smtp_server == '':
+        smtp_server = 'smtp.163.com'
+
+    ticketHandler = TrainTicketHandler('pop3.163.com', email, passwd)
+    tickets = ticketHandler.get_tickets()
+    for t in tickets:
+        print('%(date)s\t%(trainno)s\t%(seatno)s \n' % t.to_dict())
+
+    send_email(smtp_server, email, passwd, tickets)
