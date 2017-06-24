@@ -13,7 +13,7 @@ from LogHelper import LogHelper
 
 class TrainTicketHandler(object):
 
-    def __init__(self, server='', user='', passwd='', nTopMails=50):
+    def __init__(self, server='', user='', passwd='', nTopMails=100):
         self.server = server
         self.user = user
         self.passwd = passwd
