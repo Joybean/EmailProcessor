@@ -3,6 +3,8 @@
 import poplib
 import email, email.header, email.utils
 
+poplib._MAXLINE=20480
+
 class EmailUtility(object):
 
     def __init__(self, host, user, passwd, isSSL=False):
@@ -39,16 +41,19 @@ class EmailUtility(object):
         self.__connect()
         nTotalMail, nTotalSize = self.conn.stat()
         for i in range(nTotalMail, nTotalMail - nMails, -1):
-            if topLineOnly == True:
-                rsp, msglines, size = self.conn.top(i, 0)
-            else:
-                rsp, msglines, size = self.conn.retr(i)
-            ret.append((
-                rsp,
-                '\n'.encode('utf-8').join(msglines),
-                size,
-                i)
-            )
+            try:
+                if topLineOnly == True:
+                    rsp, msglines, size = self.conn.top(i, 0)
+                else:
+                    rsp, msglines, size = self.conn.retr(i)
+                ret.append((
+                    rsp,
+                    '\n'.encode('utf-8').join(msglines),
+                    size,
+                    i)
+                )
+            except:
+                print('retrieve top mail # %d failed' % i)
         self.__disconnect()
         return ret
 
@@ -66,6 +71,12 @@ class EmailUtility(object):
             )
         self.__disconnect()
         return ret
+
+    def get_mail(self, sn):
+        self.__connect()
+        rsp, msglines, size = self.conn.retr(sn)
+        self.__disconnect()
+        return rsp, msglines, size
 
 class EmailInfo(object):
 
@@ -137,24 +148,5 @@ class EmailInfo(object):
         return self.content
 
 if __name__ == '__main__':
-    util = EmailUtility('pop3.163.com', 'zybzyf@163.com', 'Initial0')
-    print('total emails: %d' % util.get_total_emails_count())
-    latestMails = util.get_latest_mails(2)
-    print('latest mails:')
-    for rsp, mail, size, sn in latestMails:
-        mailInfo = EmailInfo(mail)
-        print('subject: ', mailInfo.get_subject())
-        print('sender: ', mailInfo.get_sender())
-        print('date: ' , mailInfo.get_date())
-        print('content: ', mailInfo.get_content())
-        print('--------------------------------')
-
-    print('----------------get mail header only ----------------')
-    latestMails = util.get_latest_mails(2, True)
-    print('latest mails:')
-    for rsp, mail, size in latestMails:
-        mailInfo = EmailInfo(mail)
-        print('subject: ', mailInfo.get_subject())
-        print('sender: ', mailInfo.get_sender())
-        print('date: ' , mailInfo.get_date())
-        print('--------------------------------')
+    util = EmailUtility('pop3.163.com', 'zybzyf@163.com', '')
+    util.get_mail(2637)

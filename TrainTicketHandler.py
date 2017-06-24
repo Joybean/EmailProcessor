@@ -57,8 +57,9 @@ class TrainTicketHandler(object):
             p = '\\d\\.(.*?)[，,](.*?)开[，,](.*?)[，,](.*?)列车[，,](.*?)[，,](.*?)[，,]票价(.*?)元'
             ms = re.findall(p, content)
             if ms:
-                tickets.extend([TicketInfo(m[0], m[1], m[2], m[3], m[4], m[5], m[6], mailInfo.get_date()) for m in ms])
-        sortedTickets = sorted(tickets, key=attrgetter('date'), reverse=True)
+                new_tickets = [TicketInfo(m[0], m[1], m[2], m[3], m[4], m[5], m[6], mailInfo.get_date()) for m in ms]
+                tickets.extend([t for t in new_tickets if datetime.strptime(t.leave_date, '%Y年%m月%d日%H:%M')  > datetime.now()])
+        sortedTickets = sorted(tickets, key=attrgetter('leave_date'))
         for x in sortedTickets:
             self.log.info(str(x))
 
@@ -66,35 +67,36 @@ class TrainTicketHandler(object):
 
 class TicketInfo(object):
 
-    def __init__(self, owner, date, fromto, trainno, seatno, seattype, price, bookdate):
+    def __init__(self, owner, leave_date, fromto, trainno, seatno, seattype, price, book_date):
         self.owner = owner
-        self.date = date
+        self.leave_date = leave_date
         self.fromto = fromto
         self.trainno = trainno
         self.seatno = seatno
         self.seattype = seattype
         self.price = price
-        self.bookdate = bookdate
+        self.book_date = book_date
+
     def to_dict(self):
         return {
             'owner': self.owner,
-            'date': self.date,
             'fromto': self.fromto,
             'trainno': self.trainno,
             'seatno': self.seatno,
             'seattype': self.seattype,
             'price': self.price,
-            'bookdate': self.bookdate
+            'book_date': self.book_date,
+            'leave_date': self.leave_date
         }
 
     def __repr__(self):
-        return repr((self.owner, self.date, self.fromto, self.trainno, self.seatno, self.seattype, self.price, self.bookdate))
+        return repr((self.owner, self.leave_date, self.fromto, self.trainno, self.seatno, self.seattype, self.price, self.book_date))
 
 def send_email(smtp_server, email, passwd, tickets):
     msg = 'From: %s\r\nTo:%s\r\nSubject:TrainTicketsInfo\r\n\r\n' % (email, email) + '\n'.join([
         '%(date)s\t%(weekday)s\t%(trainno)s\t%(seatno)s \n' % {
-            'date': t.date,
-            'weekday': translate_week_day(t.date),
+            'date': t.leave_date,
+            'weekday': translate_week_day(t.leave_date),
             'trainno': t.trainno,
             'seatno': t.seatno
         } for t in tickets
@@ -107,10 +109,11 @@ def send_email(smtp_server, email, passwd, tickets):
     server.sendmail(email, email, msg.encode())
     server.quit()
 
-def translate_week_day(strDate):
+def translate_week_day(strdate):
     weekday = ['一','二','三','四','五','六','日']
-    myDate = datetime.strptime(strDate, '%Y年%m月%d日%H:%M')
+    myDate = datetime.strptime(strdate, '%Y年%m月%d日%H:%M')
     return '周' + weekday[myDate.weekday()]
+
 
 if __name__ == '__main__':
     pop3_server = input("pop server (e.g. pop3.163.com): ")
@@ -127,6 +130,6 @@ if __name__ == '__main__':
     ticketHandler = TrainTicketHandler('pop3.163.com', email, passwd)
     tickets = ticketHandler.get_tickets()
     for t in tickets:
-        print('%(date)s\t%(trainno)s\t%(seatno)s \n' % t.to_dict())
+        print('%(leave_date)s\t%(trainno)s\t%(seatno)s \n' % t.to_dict())
 
     send_email(smtp_server, email, passwd, tickets)
